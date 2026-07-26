@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: os-service-api
+  template:
+    metadata:
+      labels:
+        app: os-service-api
+    spec:
+      initContainers:
+        - name: migration
+          image: anaglislere/os-service-tech-challenge:latest
+          command: ["sh", "-c", "alembic upgrade head"]
+          envFrom:
+            - secretRef:
+                name: os-service-secrets
+      containers:
+        - name: api
+          image: anaglislere/os-service-tech-challenge:latest
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: os-service-secrets
+            - configMapRef:
+                name: os-service-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10

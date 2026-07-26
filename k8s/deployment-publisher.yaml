@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-publisher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: os-service-publisher
+  template:
+    metadata:
+      labels:
+        app: os-service-publisher
+    spec:
+      containers:
+        - name: publisher
+          image: anaglislere/os-service-tech-challenge:latest
+          command: ["python", "-m", "app.messaging.outbox_publisher"]
+          envFrom:
+            - secretRef:
+                name: os-service-secrets
+            - configMapRef:
+                name: os-service-config
