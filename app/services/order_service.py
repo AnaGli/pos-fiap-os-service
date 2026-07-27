@@ -1,6 +1,10 @@
+import logging
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.logging_config import ensure_correlation_id, set_log_context
+from app.core.tracing import capture_current_trace_headers
 from app.models.outbox_event import OutboxEvent
 from app.models.processed_event import ProcessedEvent
 from app.models.service_order import ServiceOrder, ServiceOrderHistory, ServiceOrderStatus
@@ -9,12 +13,15 @@ from app.models.vehicle import Vehicle
 from app.repositories import order_repository
 from app.schemas.order import OrderCreate
 
+logger = logging.getLogger(__name__)
+
 
 class OrderService:
     def __init__(self, db: Session):
         self.db = db
 
     def create(self, data: OrderCreate) -> ServiceOrder:
+        set_log_context(business_operation="os_create_order")
         client = self._upsert_client(data)
         vehicle = self._upsert_vehicle(data, client)
 
@@ -39,6 +46,8 @@ class OrderService:
                 event_type="OrderCreated",
                 aggregate_id=str(order.id),
                 payload={
+                    "correlationId": ensure_correlation_id(),
+                    "traceHeaders": capture_current_trace_headers(),
                     "eventType": "OrderCreated",
                     "orderId": order.id,
                     "customer": {
@@ -58,6 +67,16 @@ class OrderService:
             )
         )
         self.db.commit()
+        logger.info(
+            "Order created successfully",
+            extra={
+                "event_type": "order_created",
+                "business_status": "success",
+                "service_order_id": order.id,
+                "client_id": client.id,
+                "vehicle_id": vehicle.id,
+            },
+        )
         return self.get_by_id(order.id)
 
     def _upsert_client(self, data: OrderCreate) -> Client:
@@ -106,6 +125,7 @@ class OrderService:
     def update_status(
         self, order_id: int, status: ServiceOrderStatus, source: str = "os-service"
     ) -> ServiceOrder:
+        set_log_context(business_operation="os_update_status", service_order_id=order_id)
         order = self.get_by_id(order_id)
         if order.status == status:
             return order
@@ -121,11 +141,26 @@ class OrderService:
             )
         )
         self.db.commit()
+        logger.info(
+            "Order status updated",
+            extra={
+                "event_type": "order_status_updated",
+                "service_order_id": order.id,
+                "status_from": previous_status.value,
+                "status_to": status.value,
+                "source": source,
+            },
+        )
         return self.get_by_id(order.id)
 
     def apply_external_event(
         self, event_id: str, event_type: str, order_id: int, status: ServiceOrderStatus
     ) -> ServiceOrder:
+        set_log_context(
+            correlation_id=ensure_correlation_id(),
+            business_operation="os_apply_external_event",
+            service_order_id=order_id,
+        )
         if self.db.get(ProcessedEvent, event_id) is not None:
             return self.get_by_id(order_id)
 
@@ -145,4 +180,12 @@ class OrderService:
             ProcessedEvent(event_id=event_id, event_type=event_type, order_id=order_id)
         )
         self.db.commit()
+        logger.info(
+            "External event applied to order",
+            extra={
+                "event_type": event_type,
+                "service_order_id": order_id,
+                "target_status": status.value,
+            },
+        )
         return self.get_by_id(order.id)

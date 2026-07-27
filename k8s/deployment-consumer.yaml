@@ -15,9 +15,20 @@ spec:
       containers:
         - name: consumer
           image: anaglislere/os-service-tech-challenge:latest
-          command: ["python", "-m", "app.messaging.consumer"]
+          command: ["ddtrace-run", "python", "-m", "app.messaging.consumer"]
           envFrom:
             - secretRef:
                 name: os-service-secrets
             - configMapRef:
                 name: os-service-config
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_SERVICE
+              value: os-service-consumer
+            - name: DD_PSYCOPG_SERVICE
+              value: os-service-db
+            - name: DD_TAGS
+              value: component:consumer
