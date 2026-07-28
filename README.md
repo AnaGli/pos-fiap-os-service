@@ -1,69 +1,132 @@
 # OS Service
 
-Serviço independente responsável pelo ciclo de vida da Ordem de Serviço (OS).
-Ele é a fonte de verdade para clientes, veículos, ordens e histórico de status.
+Serviço responsável pelo ciclo de vida da Ordem de Serviço (OS). Ele é o dono
+dos dados de cliente, veículo, descrição do problema, status global da OS e
+histórico de transições.
+
+Para a visão consolidada da solução, incluindo os três microsserviços,
+diagramas da arquitetura e explicação da Saga, consulte:
+
+- [Documentação Geral da Solução](./docs/README.md)
 
 ## Responsabilidades
 
-- Criar e consultar ordens de serviço com cliente, veículo e descrição do problema;
-- Atualizar o status geral e manter o histórico;
-- Validar que veículo e cliente pertencem ao mesmo contexto;
-- Registrar o evento `OrderCreated` em uma outbox transacional;
-- Refletir os eventos `BudgetCreated`, `PaymentApproved`, `ExecutionStarted`,
-  `ExecutionFinished` e `RefundProcessed` no status e histórico.
+- abrir ordens de serviço;
+- consultar ordens, clientes, veículos e histórico;
+- atualizar o status global da OS;
+- publicar `OrderCreated` via outbox transacional;
+- refletir no histórico os eventos consumidos de Billing e Execution.
 
-O envio da outbox ao RabbitMQ será conectado na etapa de integração assíncrona.
-O mesmo protocolo AMQP será usado no Docker e na AWS; apenas a URL de conexão
-mudará por ambiente. Até lá, nenhum banco ou módulo de outro serviço é acessado
-por este serviço.
+## Banco de Dados
 
-## Execução via Docker
+- relacional: PostgreSQL
+- banco: `os_service`
 
-O serviço é executado exclusivamente em containers Docker. Não há suporte para
-subir a aplicação diretamente com Python no host.
+## Eventos
+
+### Publicados
+
+- `OrderCreated`
+
+### Consumidos
+
+- `BudgetCreated`
+- `PaymentApproved`
+- `ExecutionStarted`
+- `ExecutionFinished`
+- `RefundProcessed`
+
+## Status da OS
+
+Estados atualmente suportados:
+
+- `OPEN`
+- `WAITING_DIAGNOSIS`
+- `WAITING_APPROVAL`
+- `PAYMENT_PENDING`
+- `PAID`
+- `IN_EXECUTION`
+- `COMPLETED`
+- `EXECUTION_FAILED`
+- `CANCELLED`
+
+## Endpoints
+
+Principais endpoints:
+
+- `POST /orders`
+- `GET /orders`
+- `GET /orders/{order_id}`
+- `PATCH /orders/{order_id}/status`
+- `GET /health`
+
+Swagger:
+
+- `http://localhost:8001/docs`
+
+## Execução Local
+
+O serviço é executado exclusivamente via Docker.
+
+Subida local:
 
 ```bash
 docker compose up --build
 ```
 
-API: `http://localhost:8001`
-Documentação: `http://localhost:8001/docs`
+API:
+
+- `http://localhost:8001`
+
+## Testes
 
 Para executar os testes dentro do container:
 
 ```bash
 docker compose run --rm api sh -c "alembic upgrade head && pytest -q"
+```
 
-Para publicar a outbox no broker:
+## Mensageria
+
+Publicar a outbox manualmente:
 
 ```bash
-python -m app.messaging.outbox_publisher
+docker compose run --rm publisher python -m app.messaging.outbox_publisher
 ```
 
-Para consumir eventos do RabbitMQ:
+Consumir eventos manualmente:
 
 ```bash
-python -m app.messaging.consumer
+docker compose run --rm consumer python -m app.messaging.consumer
 ```
-```
 
-## Endpoints
+## Observabilidade
 
-- `POST /orders`
-- `GET /orders/{id}`
-- `PATCH /orders/{id}/status`
-- `GET /orders`
+O serviço possui integração com Datadog para:
 
-## Fluxo de diagnóstico
+- traces HTTP;
+- traces de publish/consume no RabbitMQ;
+- traces SQL;
+- logs estruturados com `correlation_id`.
 
-A OS é aberta com a descrição do problema e status `OPEN`; ela não recebe
-serviços ou peças. O Execution Service os identifica durante o diagnóstico e
-o Billing Service gera o orçamento a partir desse resultado. A comunicação
-entre os serviços será feita por eventos no RabbitMQ.
+Serviços esperados no Datadog:
 
-## Dados iniciais
+- `os-service`
+- `os-service-publisher`
+- `os-service-consumer`
+- `os-service-db`
 
-As tabelas deste serviço começam vazias por decisão arquitetural. Não haverá
-migração de `clients`, `vehicles` ou `service_orders` do monólito: novas ordens
-de serviço e seus dados relacionados passarão a ser criados diretamente neste
-serviço quando o roteamento for ativado.
+## CI/CD e Deploy
+
+Artefatos de entrega presentes no repositório:
+
+- Dockerfile
+- manifestos Kubernetes em `k8s/`
+- pipeline em `.github/workflows/ci-cd.yml`
+
+O pipeline contempla:
+
+- build;
+- testes automatizados;
+- validação de qualidade;
+- deploy automatizado em Kubernetes.

@@ -75,6 +75,12 @@ class RabbitMQPublisher:
                 )
             else:
                 with trace_context:
+                    current_span = tracer.current_span() if tracer is not None else None
+                    if current_span is not None:
+                        current_span.set_tag("span.kind", "producer")
+                        current_span.set_tag("messaging.system", "rabbitmq")
+                        current_span.set_tag("messaging.destination", EXCHANGE_NAME)
+                        current_span.set_tag("messaging.rabbitmq.routing_key", routing_key_for(event_type))
                     headers = inject_trace_headers(
                         {
                             "x-correlation-id": message.get("correlationId") or ensure_correlation_id(),

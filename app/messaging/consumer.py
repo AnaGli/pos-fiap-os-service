@@ -38,7 +38,11 @@ def main() -> None:
                 service=service_name(),
                 resource=event.get("eventType", "unknown"),
                 span_type="worker",
-            ):
+            ) as span:
+                span.set_tag("span.kind", "consumer")
+                span.set_tag("messaging.system", "rabbitmq")
+                span.set_tag("messaging.destination", method.routing_key if method is not None else "unknown")
+                span.set_tag("messaging.rabbitmq.queue", method.routing_key if method is not None else "unknown")
                 with SessionLocal() as db:
                     handle_event(db, event)
             ch.basic_ack(delivery_tag=method.delivery_tag)
