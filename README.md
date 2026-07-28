@@ -68,6 +68,20 @@ Swagger:
 
 O serviço é executado exclusivamente via Docker.
 
+Antes de subir o ambiente, crie ou ajuste o arquivo `.env` na raiz do
+repositório com os valores necessários para execução local. Esse arquivo é
+usado pelo `docker compose` para carregar variáveis como as de observabilidade
+e integração.
+
+Conteúdo mínimo sugerido:
+
+```env
+DD_API_KEY=KEY
+DD_SITE=datadoghq.com
+DD_ENV=dev
+DD_VERSION=1.0.0
+```
+
 Subida local:
 
 ```bash
