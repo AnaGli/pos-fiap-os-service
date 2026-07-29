@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-publisher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: os-service-publisher
+  template:
+    metadata:
+      labels:
+        app: os-service-publisher
+    spec:
+      containers:
+        - name: publisher
+          image: anaglislere/os-service-tech-challenge:latest
+          command: ["ddtrace-run", "python", "-m", "app.messaging.outbox_publisher"]
+          envFrom:
+            - secretRef:
+                name: os-service-secrets
+            - configMapRef:
+                name: os-service-config
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_SERVICE
+              value: os-service-publisher
+            - name: DD_PSYCOPG_SERVICE
+              value: os-service-db
+            - name: DD_TAGS
+              value: component:publisher
